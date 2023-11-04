@@ -7,3 +7,7 @@ data/*
 result
 work
 trace.txt*
+
+.Rproj.user
+.Rhistory
+*.Rproj

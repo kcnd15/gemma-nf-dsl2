@@ -79,18 +79,40 @@ log.info "Output file prefix           : ${params.out}"
 log.info ''
 
 
-// Split VCF
+workflow {
+  
+  filePheno = Channel.fromPath(params.pheno)
+  fileGenoVcf = Channel.fromPath(params.geno)
+  fileGenoTbi = Channel.fromPath("${params.geno}.tbi")
+  
+  // Split genotype file
+  chunks = split_genotype(fileGenoVcf, fileGenoTbi) | flatten
+  
+  // Preprocess genotype and phenotype data
+  // preprocess()
+  tuple_files = preprocess_geno_pheno(fileGenoVcf, filePheno)
+  
+  // Compute kinship
+  tuple_eigen = kinship(tuple_files)
+  
+  // Test for association between phenotypes and genetic variants
+  // and collect summary statistics
+  test_association(tuple_files, tuple_eigen, chunks) | collect_summary_statistics
 
-process split {
+}
+
+// Split genotype VCF file
+
+process split_genotype {
 
     input:
 
-    file(vcf) from file(params.geno)
-    file(index) from file("${params.geno}.tbi")
+    file(vcf) // from file(params.geno)
+    file(index) // from file("${params.geno}.tbi")
 
     output:
 
-    file("chunk*") into chunks_ch
+    path("chunk*") // file("chunk*") into chunks_ch
 
     script:
     """
@@ -100,18 +122,18 @@ process split {
 }
 
 
-// Pre-process genotypes, phenotypes
+// Preprocess genotype and phenotype data
 
-process preprocess {
+process preprocess_geno_pheno {
 
     cpus params.t
 
     input:
-    file vcf from file(params.geno)    
-    file pheno from file(params.pheno)
+    path vcf // file vcf from file(params.geno)    
+    path pheno // file pheno from file(params.pheno)
 
     output:
-    tuple file("geno.bed"), file("geno.bim"), file("geno.fam") into geno_ch
+    tuple file("geno.bed"), file("geno.bim"), file("geno.fam") // into geno_ch
 
     script:
     """
@@ -124,17 +146,17 @@ process preprocess {
 }
 
 
-// Obtain kinship matrix
+// Compute kinship, Obtain kinship matrix
 
 process kinship {
 
     cpus params.t
 
     input:
-    tuple file(bed), file(bim), file(fam) from geno_ch
+    tuple file(bed), file(bim), file(fam) // from geno_ch
 
     output:
-    tuple file("kinship.sXX.eigenD.txt"), ("kinship.sXX.eigenU.txt") into kinship_ch
+    tuple file("kinship.sXX.eigenD.txt"), file("kinship.sXX.eigenU.txt") // into kinship_ch
 
     script:
     """
@@ -150,18 +172,19 @@ process kinship {
 
 
 // GWAS: testing (GEMMA)
+// Test for association between phenotypes and genetic variants
 
-process test {
+process test_association {
 
     cpus params.t
 
     input:
-    tuple file(bed),file(bim),file(fam) from geno_ch
-    tuple file(kinship_d), file(kinship_u) from kinship_ch
-    each file(chunk) from chunks_ch
+    tuple file(bed), file(bim), file(fam) // from geno_ch
+    tuple file(kinship_d), file(kinship_u) // from kinship_ch
+    each file(chunk) // from chunks_ch
 
     output:
-    file('gemma.0*.assoc.txt') into sstats_ch
+    file('gemma.0*.assoc.txt') // into sstats_ch
 
     script:
     """
@@ -199,20 +222,20 @@ process test {
 }
 
 
-sstats_ch.collectFile(name: "${params.out}", sort: { it.name }).set{pub_ch}
+// sstats_ch.collectFile(name: "${params.out}", sort: { it.name }).set{pub_ch}
 
 
-// Summary stats
+// Collect summary statistics
 
-process end {
+process collect_summary_statistics {
 
     publishDir "${params.dir}", mode: 'copy'
 
     input:
-    file(out) from pub_ch
+    file(out) // from pub_ch
 
     output:
-    file(out) into end_ch
+    file(out) // into end_ch
 
     script:
     """
